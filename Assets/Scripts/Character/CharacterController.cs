@@ -4,20 +4,22 @@ using UnityEngine;
 
 namespace Character
 {
+    [RequireComponent(typeof(CapsuleCollider))]
     [RequireComponent(typeof(Rigidbody))]
     public class CharacterController : MonoBehaviour
     {
         [SerializeField] private float jumpHeight = 2f;
         [SerializeField] private Transform cameraTransform = null;
-        [SerializeField] private float groundCheckRadius = 0.1f;
+        [SerializeField, Range(0f,1f)] private float shellOffsetPercent = 0.1f;
+        [SerializeField] private float groundCheckDistance = 0.01f;
 
-        private bool m_Grounded = false;
-        private bool m_GroundedPreviously = false;
+        private bool m_Grounded = false, m_GroundedPreviously = false, m_Jump = false, m_JumpRequest = false;
         private Vector3 m_GroundContactNormal = Vector3.up;
 
         private IMovementInput m_Input;
         private Transform m_Transform;
         private Rigidbody m_Rigidbody;
+        private CapsuleCollider m_Collider;
 
         #region Unity Runtime Methods
             private void Awake()
@@ -54,15 +56,19 @@ namespace Character
             
             private void FixedUpdate()
             {
-                MatchRotation(cameraTransform.rotation);
+                if(cameraTransform)
+                    MatchRotation(cameraTransform.rotation);
+                
+                CheckForGround();
+                
+                ProcessJump(m_Input.MoveInputVector);
                 ProcessMove(m_Input.MoveInputVector);
             }
         #endregion
 
         #region Input Callbacks
-            private void OnJumpPressed() { }
-
-            private void OnJumpReleased() { }
+            private void OnJumpPressed() => m_JumpRequest = true;
+            private void OnJumpReleased() => m_JumpRequest = false;
             
             private void OnRunPressed() { }
             
@@ -78,6 +84,7 @@ namespace Character
             {
                 m_Transform = GetComponent<Transform>();
                 m_Rigidbody = GetComponent<Rigidbody>();
+                m_Collider = GetComponent<CapsuleCollider>();
             }
 
             private void InitValues()
@@ -85,17 +92,25 @@ namespace Character
                 m_Input = InputManager.Instance;
             }
         #endregion
-        
-        private void MatchRotation(Quaternion rotation)
-        {
+
+        private void MatchRotation(Quaternion rotation) =>
             m_Rigidbody.MoveRotation(Quaternion.Euler(Vector3.up * rotation.eulerAngles.y));
-        }
 
         private void ProcessMove(Vector2 inputDirection)
         {
-            var targetDirection = CalculateMoveDirection(inputDirection, Vector3.up);
+            var targetDirection = CalculateMoveDirection(inputDirection, m_GroundContactNormal);
             var targetAcceleration = CalculateAcceleration(targetDirection);
             m_Rigidbody.AddForce(targetDirection * targetAcceleration, ForceMode.Acceleration);
+        }
+
+        private void ProcessJump(Vector2 direction)
+        {
+            if (m_Grounded && m_JumpRequest)
+            {
+                var targetDirection = new Vector3(direction.x, 1f, direction.y);
+                var force = Mathf.Sqrt(-2 * Physics.gravity.y * jumpHeight);
+                m_Rigidbody.AddRelativeForce(targetDirection.normalized * force, ForceMode.VelocityChange);
+            }
         }
 
         private Vector3 CalculateMoveDirection(Vector2 input, Vector3 groundNormal)
@@ -119,47 +134,14 @@ namespace Character
             //TODO: set target speed based on direction
             return 5f;
         }
-
-        private void ProcessJump(Vector2 direction)
-        {
-            if (m_Grounded)
-            {
-                var targetDirection = new Vector3(direction.x, 1f, direction.y);
-                var force = Mathf.Sqrt(-2 * Physics.gravity.y * jumpHeight);
-                m_Rigidbody.AddRelativeForce(targetDirection.normalized * force, ForceMode.VelocityChange);
-            }
-        }
         
         private void CheckForGround()
         {
-            //TODO: fix groundcheck
-            RaycastHit hitInfo;
-            m_Grounded = SphereCastToGround(out hitInfo);
-            if (m_Grounded)
-            {
-                m_GroundContactNormal = hitInfo.normal;
-                if (!m_GroundedPreviously)
-                {
-                    m_Rigidbody.drag = 1f;
-                    m_GroundedPreviously = true;
-                }
-            }
-            else
-            {
-                m_GroundContactNormal = Vector3.up;
-                if (m_GroundedPreviously)
-                {
-                    m_Rigidbody.drag = 0f;
-                    m_GroundedPreviously = false;
-                }
-            }
+            var radius = m_Collider.radius;
+            var position = transform.position + Vector3.up * radius;
+            var checkRadius = radius * (1f - shellOffsetPercent);
+            m_Grounded = Physics.SphereCast(position, checkRadius, Vector3.down, out var hitInfo, shellOffsetPercent + groundCheckDistance, Physics.AllLayers, QueryTriggerInteraction.Ignore);
+            m_GroundContactNormal = (m_Grounded) ? hitInfo.normal : Vector3.up;
         }
-
-        private bool SphereCastToGround(out RaycastHit hitInfo)
-        {
-            var result = Physics.SphereCast(m_Transform.position, groundCheckRadius, Vector3.down, out hitInfo);
-            return result;
-        }
-        
     }
 }
