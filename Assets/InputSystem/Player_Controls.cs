@@ -31,7 +31,7 @@ public class @Player_Controls : IInputActionCollection, IDisposable
                     ""type"": ""Value"",
                     ""id"": ""5009343d-bb65-4073-88a3-f2834241bf1f"",
                     ""expectedControlType"": ""Vector2"",
-                    ""processors"": ""NormalizeVector2"",
+                    ""processors"": """",
                     ""interactions"": """"
                 },
                 {
